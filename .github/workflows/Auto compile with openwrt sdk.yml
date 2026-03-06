@@ -19,6 +19,7 @@ jobs:
   job_check:
     name: Check Version
     runs-on: ubuntu-24.04
+    if: github.ref == 'refs/heads/main'
     outputs:
       openwrt-netsee_version: ${{ steps.check_version.outputs.latest_version }}
       has_update: ${{ steps.check_version.outputs.has_update }}
@@ -27,33 +28,35 @@ jobs:
         uses: actions/checkout@main
         with:
           fetch-depth: 0
-          ref: ${{ github.ref_name }}
 
       - name: Check version
         id: check_version
         env:
           url_tags: https://api.github.com/repos/${{ env.openwrt-netsee }}/releases/latest
         run: |
-          cd openwrt-netsee
-          # 提取版本号和发布号
-          pkg_version=$(awk -F ':=' '/^PKG_VERSION:=/ {print $2}' Makefile | tr -d ' ')
-          pkg_release=$(awk -F ':=' '/^PKG_RELEASE:=/ {print $2}' Makefile | tr -d ' ')
-          
-          # 检查版本号是否提取成功
-          if [ -z "$pkg_version" ] || [ -z "$pkg_release" ]; then
-            echo "Error: Failed to extract version from Makefile"
-            echo "PKG_VERSION: '$pkg_version'"
-            echo "PKG_RELEASE: '$pkg_release'"
-            exit 1
-          fi
-          
-          # 格式化为 v0.8.1-r2 格式，如果是 r1 则省略
-          if [ "$pkg_release" = "1" ]; then
-            latest_version="v${pkg_version}"
+          # 从当前tag获取版本号
+          if [ -n "${{ github.ref }}" ] && [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            latest_version=$(echo "${{ github.ref }}" | sed 's|refs/tags/||')
           else
-            latest_version="v${pkg_version}-r${pkg_release}"
+            # 如果没有tag，从Makefile提取
+            cd openwrt-netsee
+            pkg_version=$(awk -F ':=' '/^PKG_VERSION:=/ {print $2}' Makefile | tr -d ' ')
+            pkg_release=$(awk -F ':=' '/^PKG_RELEASE:=/ {print $2}' Makefile | tr -d ' ')
+            
+            if [ -z "$pkg_version" ] || [ -z "$pkg_release" ]; then
+              echo "Error: Failed to extract version from Makefile"
+              exit 1
+            fi
+            
+            if [ "$pkg_release" = "1" ]; then
+              latest_version="v${pkg_version}"
+            else
+              latest_version="v${pkg_version}-r${pkg_release}"
+            fi
           fi
+          
           echo "latest_version=${latest_version}" >> $GITHUB_OUTPUT
+          echo "Version: ${latest_version}"
 
           remote_latest_version=$(wget -qO- -t1 -T2 ${{env.url_tags}} | jq -r '.tag_name')
 
@@ -64,17 +67,12 @@ jobs:
           fi
           echo "Remote latest: $remote_latest_version"
 
-          # 去掉 tag_name 中的 v 前缀和 r 前缀，-r1 可以省略
-          # 格式：v0.8.1-r2 -> 0.8.1-2, v0.8.1-r1 -> 0.8.1, v0.8.1 -> 0.8.1
-          normalized_local_version=$(echo "$latest_version" | sed 's/^v//' | sed 's/-r\([0-9]*\)$/-\1/' | sed 's/-1$//')
-          normalized_remote_version=$(echo "$remote_latest_version" | sed 's/^v//' | sed 's/-r\([0-9]*\)$/-\1/' | sed 's/-1$//')
-
-          if [ "$normalized_local_version" = "$normalized_remote_version" ]; then
+          # 比较版本号
+          if [ "$latest_version" = "$remote_latest_version" ]; then
             echo "has_update=false" >> $GITHUB_OUTPUT
           else
             echo "has_update=true" >> $GITHUB_OUTPUT
           fi
-
 
       - name: Prepare release
         if: steps.check_version.outputs.has_update == 'true'
@@ -92,7 +90,7 @@ jobs:
         with:
           tag_name: ${{steps.check_version.outputs.latest_version}}
           name: ${{steps.check_version.outputs.latest_version}}
-          target_commitish: ${{ github.ref_name }}
+          target_commitish: main
           prerelease: ${{steps.check_version.outputs.prerelease}}
           body_path: release.txt
 
@@ -100,7 +98,7 @@ jobs:
   job_build:
     name: Build openwrt-netsee [${{ matrix.platform }}-${{ matrix.ver }}]
     needs: job_check
-    if: needs.job_check.outputs.has_update == 'true'
+    if: needs.job_check.outputs.has_update == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
