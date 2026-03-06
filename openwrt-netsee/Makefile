@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=netsee
-PKG_VERSION:=null
+PKG_VERSION:=1.0.1
 PKG_RELEASE:=1
 
 PKG_LICENSE:=Apache-2.0
@@ -13,7 +13,7 @@ include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/rust/rust-values.mk
 
 # 二进制文件的文件名和URL
-RUST_NETSEE_VERSION:=null
+RUST_NETSEE_VERSION:=1.0.1
 RUST_BINARY_FILENAME:=netsee-$(RUST_NETSEE_VERSION)-$(RUSTC_TARGET_ARCH).tar.gz
 
 
